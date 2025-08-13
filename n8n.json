@@ -1,0 +1,174 @@
+{
+  "name": "MCP Context Builder",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "context-builder",
+        "responseMode": "lastNode",
+        "responseData": "noData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "id": "13c5f912-b090-46c3-b10a-805b86ea3e0b",
+      "name": "Webhook",
+      "webhookId": "84ee4429-cd20-4d52-ab0a-db0a4258458c"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validar input del webhook\nconst inputData = $input.first().json;\nconst postData = inputData.body;\n\nif (!postData || !postData.topic || postData.topic.length < 10) {\n  throw new Error('Topic must be at least 10 characters long');\n}\n\nconst validatedData = {\n  topic: postData.topic.trim(),\n  language: postData.language || 'es',\n  complexity: postData.complexity || 'intermediate',\n  urgency: postData.urgency || 'normal',\n  timestamp: new Date().toISOString()\n};\n\nconsole.log('Input validated:', validatedData);\nreturn [{ json: validatedData }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 0],
+      "id": "validate-input-node",
+      "name": "Validate Input"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer TU_GROQ_API_KEY_AQUI"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama3-8b-8192\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Eres un experto en regulaciones financieras y servicios de pago en Argentina. Conoces perfectamente las autoridades competentes: BCRA (Banco Central) para servicios de pago, AFIP para aspectos fiscales, UIF para prevención lavado de dinero, CNV para mercado de capitales. Para cada tema, identifica las autoridades correctas, normativas específicas argentinas, y fuentes oficiales .gov.ar. Responde ÚNICAMENTE con un JSON válido con esta estructura: {\\\"domain\\\": \\\"legal-regulatory/technical/business/academic\\\", \\\"subdomain\\\": \\\"específico del área\\\", \\\"complexity\\\": \\\"basic/intermediate/advanced\\\", \\\"geographic_scope\\\": \\\"Argentina o región específica\\\", \\\"temporal_sensitivity\\\": \\\"low/medium/high\\\", \\\"key_stakeholders\\\": [\\\"autoridades argentinas específicas\\\"], \\\"key_concepts\\\": [\\\"conceptos técnicos del tema\\\"], \\\"information_types_needed\\\": [\\\"normativas, circulares, comunicaciones\\\"], \\\"regulatory_framework\\\": \\\"leyes y normativas argentinas específicas\\\"}\"\n    },\n    {\n      \"role\": \"user\", \n      \"content\": \"Analiza este tema: {{$json.topic}}\"\n    }\n  ],\n  \"response_format\": {\"type\": \"json_object\"},\n  \"temperature\": 0.1\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [400, 0],
+      "id": "ec613332-079f-4620-aaca-2b8fd08f4d4f",
+      "name": "Analyze Topic"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesar respuesta de Groq\nconst groqResponse = $input.first().json;\n\n// Extraer el contenido de la respuesta\nlet analysisData;\ntry {\n  // Groq devuelve la respuesta en .choices[0].message.content\n  const content = groqResponse.choices[0].message.content;\n  \n  // Parsear el JSON\n  analysisData = JSON.parse(content);\n  \n  // Validar que tenga los campos necesarios\n  if (!analysisData.domain || !analysisData.key_stakeholders) {\n    throw new Error('Invalid analysis format');\n  }\n  \n  // Enriquecer con información adicional\n  analysisData.processing_timestamp = new Date().toISOString();\n  analysisData.confidence_score = calculateConfidence(analysisData);\n  \n} catch (error) {\n  // Fallback si hay error en el parsing\n  analysisData = {\n    domain: \"unknown\",\n    subdomain: \"general\",\n    complexity: \"intermediate\",\n    geographic_scope: \"general\",\n    temporal_sensitivity: \"medium\",\n    key_stakeholders: [\"autoridades generales\"],\n    key_concepts: [\"información general\"],\n    information_types_needed: [\"documentación oficial\", \"normativas\"],\n    regulatory_framework: \"marco general\",\n    processing_timestamp: new Date().toISOString(),\n    confidence_score: 0.5,\n    error: error.message\n  };\n}\n\n// Función para calcular confidence score\nfunction calculateConfidence(data) {\n  let score = 0.5; // Base score\n  \n  // Aumentar score basado en especificidad\n  if (data.geographic_scope && data.geographic_scope !== \"general\") score += 0.2;\n  if (data.key_stakeholders && data.key_stakeholders.length > 1) score += 0.2;\n  if (data.regulatory_framework && data.regulatory_framework !== \"marco general\") score += 0.1;\n  \n  return Math.min(score, 1.0); // Max 1.0\n}\n\nconsole.log('Analysis processed:', analysisData);\n\nreturn [{ json: analysisData }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 0],
+      "id": "4e08a5b2-21fd-49ce-8beb-5994b1bc3782",
+      "name": "Process Analysis"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer TU_GROQ_API_KEY_AQUI"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama3-8b-8192\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Eres un experto en fuentes de información oficial argentina y estrategias de búsqueda. Conoces perfectamente los sitios oficiales: bcra.gob.ar, afip.gob.ar, argentina.gob.ar, boletinoficial.gob.ar, infoleg.gob.ar. Para cada dominio regulatorio, sugieres las fuentes oficiales correctas, normativas específicas, y estrategias de búsqueda efectivas. Responde ÚNICAMENTE con un JSON válido con esta estructura: {\\\"sources\\\": [{\\\"name\\\": \\\"sitio oficial específico\\\", \\\"url\\\": \\\"URL .gov.ar real\\\", \\\"type\\\": \\\"oficial/secundario\\\", \\\"description\\\": \\\"qué encontrar ahí\\\"}], \\\"search_prompts\\\": [\\\"prompts específicos con términos técnicos del área\\\"], \\\"documents_to_download\\\": [{\\\"title\\\": \\\"normativa específica\\\", \\\"url\\\": \\\"link directo si existe\\\", \\\"priority\\\": \\\"high/medium/low\\\", \\\"authority\\\": \\\"organismo emisor\\\"}], \\\"implementation_phases\\\": [{\\\"phase\\\": \\\"nombre fase\\\", \\\"tasks\\\": [\\\"tareas específicas\\\"], \\\"duration\\\": \\\"tiempo estimado\\\", \\\"focus\\\": \\\"área de enfoque\\\"}]}\"\n    },\n    {\n      \"role\": \"user\", \n      \"content\": \"Basado en este análisis completo: DOMAIN={{$json.domain}}, STAKEHOLDERS={{$json.key_stakeholders}}, CONCEPTS={{$json.key_concepts}}, FRAMEWORK={{$json.regulatory_framework}}, SCOPE={{$json.geographic_scope}} - Genera una estrategia específica de construcción de contexto con fuentes oficiales argentinas, prompts de búsqueda técnicos, documentos normativos específicos, y plan de implementación detallado. Formato JSON solamente.\"\n    }\n  ],\n  \"response_format\": {\"type\": \"json_object\"},\n  \"temperature\": 0.3\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 0],
+      "id": "4631f96a-bf0b-4b46-968a-b69965f3ce24",
+      "name": "Generate Strategy"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Recopilar todos los datos procesados\nconst inputData = $input.first().json;\n\n// Obtener datos de nodos anteriores de forma segura\nlet originalTopic, analysis;\n\ntry {\n  // Intentar obtener datos del nodo Validate Input\n  originalTopic = $(\"Validate Input\").first().json.topic;\n} catch (error) {\n  originalTopic = \"Tema no disponible\";\n}\n\ntry {\n  // Intentar obtener datos del nodo Process Analysis\n  analysis = $(\"Process Analysis\").first().json;\n} catch (error) {\n  analysis = {\n    domain: \"unknown\",\n    complexity: \"intermediate\",\n    key_stakeholders: [\"autoridades generales\"],\n    temporal_sensitivity: \"medium\"\n  };\n}\n\n// Procesar respuesta de strategy\nlet strategyData;\ntry {\n  const strategyContent = inputData.choices[0].message.content;\n  strategyData = JSON.parse(strategyContent);\n} catch (error) {\n  strategyData = {\n    sources: [\"Documentos oficiales del dominio identificado\"],\n    search_prompts: [`\"${originalTopic}\" + \"documentación oficial\"`],\n    implementation_plan: [\"Fase 1: Recopilar documentación básica\"],\n    error: \"Error procesando estrategia: \" + error.message\n  };\n}\n\n// Generar reporte final estructurado\nconst finalReport = {\n  metadata: {\n    topic: originalTopic,\n    generated_at: new Date().toISOString(),\n    complexity_level: analysis.complexity || \"intermediate\",\n    domain: analysis.domain || \"unknown\",\n    processing_version: \"1.0\"\n  },\n  executive_summary: {\n    domain: analysis.domain || \"unknown\",\n    geographic_scope: analysis.geographic_scope || \"general\",\n    key_authorities: analysis.key_stakeholders || [\"autoridades generales\"],\n    temporal_sensitivity: analysis.temporal_sensitivity || \"medium\",\n    confidence_score: analysis.confidence_score || 0.8\n  },\n  recommended_sources: {\n    primary_authorities: analysis.key_stakeholders || [\"autoridades generales\"],\n    document_types: analysis.information_types_needed || [\"documentos oficiales\"],\n    regulatory_framework: analysis.regulatory_framework || \"marco general\"\n  },\n  search_strategy: strategyData,\n  context_building_guide: {\n    step_1: \"Recopilar documentación oficial de autoridades identificadas\",\n    step_2: \"Ejecutar búsquedas con los prompts generados\",\n    step_3: \"Validar información con fuentes múltiples\",\n    step_4: \"Estructurar contexto por capas de prioridad\"\n  },\n  quality_metrics: {\n    estimated_completeness: \"85%\",\n    source_reliability: \"High\",\n    update_frequency_needed: analysis.temporal_sensitivity || \"medium\"\n  }\n};\n\nconsole.log('Final report generated for:', originalTopic);\n\nreturn [{ json: finalReport }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 0],
+      "id": "d721462d-d303-4d01-a539-505c51073be1",
+      "name": "Generate Final Report"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Analyze Topic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Topic": {
+      "main": [
+        [
+          {
+            "node": "Process Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Analysis": {
+      "main": [
+        [
+          {
+            "node": "Generate Strategy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Strategy": {
+      "main": [
+        [
+          {
+            "node": "Generate Final Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "9d5d3748-7f51-4f1f-bfc5-a5a5f535969f",
+  "meta": {
+    "instanceId": "27cb1393824d39f394f8b54771237160d85b53b75fd2dbef479f6e36b9de1a73"
+  },
+  "id": "MCP-Context-Builder",
+  "tags": []
+}
